@@ -1,5 +1,4 @@
-# 망각곡선 복습 요약 알림 발송(NOTI-01). Render Free에는 cron이 없어 GitHub Actions가 매시간 호출한다.
-# 서버는 사용자별 알림 시각이 지났고 오늘 요약이 없을 때만 보내므로, 실행이 늦거나 겹쳐도 안전하다.
+
 name: review-digest
 
 on:
@@ -33,9 +32,10 @@ jobs:
           for attempt in 1 2 3; do
             response="$(curl -fsS --max-time 60 --retry 2 --retry-all-errors --retry-delay 10 \
               -X POST -H "Authorization: Bearer ${CRON_SECRET}" "$API_URL")"
-            echo "$response"
-            pending="$(echo "$response" | jq -r '.dmPending')"
+            pending="$(jq -r '.dmPending' <<<"$response")"
             if [ "$pending" = "0" ]; then
-              break
+              echo "호출 ${attempt}회 만에 완료했습니다."
+              exit 0
             fi
           done
+          echo "::warning::남은 DM은 다음 실행에서 이어서 보냅니다."
