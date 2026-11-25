@@ -1,0 +1,41 @@
+# 망각곡선 복습 요약 알림 발송(NOTI-01). Render Free에는 cron이 없어 GitHub Actions가 매시간 호출한다.
+# 서버는 사용자별 알림 시각이 지났고 오늘 요약이 없을 때만 보내므로, 실행이 늦거나 겹쳐도 안전하다.
+name: review-digest
+
+on:
+  schedule:
+    # 정각의 실행 지연·혼잡을 피해 매시 7분에 실행한다(UTC).
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: review-digest
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 요약 발송 API 호출
+        env:
+          API_URL: ${{ secrets.REVIEW_DIGEST_API_URL }}
+          CRON_SECRET: ${{ secrets.REVIEW_DIGEST_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "$API_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::REVIEW_DIGEST_API_URL과 REVIEW_DIGEST_CRON_SECRET 저장소 시크릿이 필요합니다."
+            exit 1
+          fi
+          # 한 번 호출은 서버 제한 시간 안에서 DM을 보내고, 남은 DM이 있으면 최대 3번까지 이어서 보낸다.
+          for attempt in 1 2 3; do
+            response="$(curl -fsS --max-time 60 --retry 2 --retry-all-errors --retry-delay 10 \
+              -X POST -H "Authorization: Bearer ${CRON_SECRET}" "$API_URL")"
+            echo "$response"
+            pending="$(echo "$response" | jq -r '.dmPending')"
+            if [ "$pending" = "0" ]; then
+              break
+            fi
+          done
